@@ -1,7 +1,7 @@
 % AUV Initial Conditions
 x0 = -50;     % Initial x position (m)
 y0 = -50;     % Initial y position (m)
-psi0 = deg2rad(225); % Initial heading (rad)
+psi0 = deg2rad(22); % Initial heading (rad)
 start = [x0; y0]; % Starting position vector
 
 % Docking Target Parameters
