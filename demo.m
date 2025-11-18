@@ -1,7 +1,7 @@
 % AUV Initial Conditions
 x0 = -50;     % Initial x position (m)
 y0 = -50;     % Initial y position (m)
-psi0 = deg2rad(30); % Initial heading (rad)
+psi0 = deg2rad(225); % Initial heading (rad)
 start = [x0; y0]; % Starting position vector
 
 % Docking Target Parameters
@@ -20,7 +20,7 @@ length_frustum = 3.0; % Length of the frustum (m)
 current_v = 0.5; % Velocity of the water current (m/s)
 % The current is at 90 degrees to the shortest path.
 % Shortest path vector: V_path = dock_start_pos - start
-V_path_shortest = dock_start_pos - start;-30
+V_path_shortest = dock_start_pos - start;
 % Angle of the shortest path
 psi_path_shortest = atan2(V_path_shortest(2), V_path_shortest(1));
 % Angle of the current is 90 degrees to the shortest path
@@ -510,7 +510,7 @@ function rc = sdre_guidance(x, y_pos, psi, target)
 
     % Cost functions
     Q = diag([500, 1]);   % weight on heading error
-    R = 1; % weight on control effort
+    R = 1;               % weight on control effort
 
     P = icare(A, B, Q, R);
     x_sse = [heading_error; 0];
@@ -522,7 +522,7 @@ function rc = sdre_guidance(x, y_pos, psi, target)
 
 end
 
-% Figure 9 - Heading Error vs Time (SDRE) ----
+% Figure 7 - Heading Error vs Time (SDRE) ----
 
 heading_error_SDRE = zeros(size(T_SDRE));
 

@@ -1,7 +1,7 @@
 % AUV Initial Conditions
 x0 = -50;     % Initial x position (m)
 y0 = -50;     % Initial y position (m)
-psi0 = deg2rad(30); % Initial heading (rad)
+psi0 = deg2rad(225); % Initial heading (rad)
 start = [x0; y0]; % Starting position vector
 
 % Docking Target Parameters
@@ -20,7 +20,7 @@ length_frustum = 3.0; % Length of the frustum (m)
 current_v = 0.5; % Velocity of the water current (m/s)
 % The current is at 90 degrees to the shortest path.
 % Shortest path vector: V_path = dock_start_pos - start
-V_path_shortest = dock_start_pos - start;-30
+V_path_shortest = dock_start_pos - start;
 % Angle of the shortest path
 psi_path_shortest = atan2(V_path_shortest(2), V_path_shortest(1));
 % Angle of the current is 90 degrees to the shortest path
@@ -106,7 +106,6 @@ options_SDRE = odeset('Events', @(t,y) docking_events(t, y, params_SDRE));
 [T_SDRE, Y_SDRE] = ode45(@(t,y) auv_model_log_poly_decel(t, y, params_SDRE), tspan, y0_full, options_SDRE);
 
 fprintf('Simulations complete. Plotting results...\n');
-
 
 % Plot Comparison Results
 plot_comparison(T_LOS, Y_LOS, T_carrot, Y_carrot, T_NLG, Y_NLG, T_SDRE, Y_SDRE, common_params);
@@ -339,7 +338,7 @@ end
 
 % Limit the maximum angle for correcting the heading angle to be between 30 and -30 degrees.
 % This is applied to the output of the PID/guidance controller.
-max_correction_rad = deg2rad(100);
+max_correction_rad = deg2rad(50);
 rc = max(-max_correction_rad, min(max_correction_rad, rc));
 
 % Speed Control - Log Polynomial Law for Deceleration
@@ -385,7 +384,7 @@ else
 
         term = (log(dist_to_target)) / ...
                (log(dynamic_decel_radius));
-       
+        
         % The desired speed is relative to the ground
         s_desired_ground = params.cruise_speed * max(0, term)^n;
         
@@ -498,7 +497,7 @@ function rc = sdre_guidance(x, y_pos, psi, target)
     A(1,2) = 1;
     B = zeros(2,1);
     B(1,1) = 0;
-    B(2,1) = 1;
+    B(2,1) = -1;
 
     % A = [0 1 0 0
     %     0 0 0 0
@@ -509,55 +508,30 @@ function rc = sdre_guidance(x, y_pos, psi, target)
     %     1 0];
 
     % Cost functions
-    Q = diag([500, 1]);   % weight on heading error
+    Q = diag([50, 1]);   % weight on heading error
     R = 1; % weight on control effort
 
     P = icare(A, B, Q, R);
     x_sse = [heading_error; 0];
 
     K = (R \ (B' * P));   
-    u = K * x_sse;
-
+    u = -K * x_sse;
     rc = u;
 
-end
+    % Figure 7 - SDRE diff. btw Desired_psi_ground and psi vs time
 
-% Figure 9 - Heading Error vs Time (SDRE) ----
-
-heading_error_SDRE = zeros(size(T_SDRE));
-
-for i = 1:length(T_SDRE)
-
-    % AUV states
-    x_auv   = Y_SDRE(i,1);
-    y_auv   = Y_SDRE(i,2);
-    psi     = Y_SDRE(i,4);
-
-    % Target position at current time (MOVING target)
-    target_pos = get_dock_position( ...
-                    T_SDRE(i), ...
-                    common_params.dock_start_pos, ...
-                    common_params.dock_velocity_vector);
-
-    % Vector from AUV → target
-    dx = target_pos(1) - x_auv;
-    dy = target_pos(2) - y_auv;
-
-    % Desired heading w.r.t moving target
-    desired_psi = atan2(dy, dx);
-
-    % Heading error
-    heading_error_SDRE(i) = wrapToPi(desired_psi - psi);
-
-end
-
-% ---- Plot ----
-figure('Name','Heading Error vs Time (SDRE)','Position',[100 100 1200 500]);
-plot(T_SDRE, heading_error_SDRE, 'LineWidth', 2);
+    figure;
+    plot(T_SDRE, error_SDRE, 'LineWidth', 2);
 xlabel('Time (s)');
-ylabel('\psi_{desired}(t) - \psi(t)  (rad)');
-title('Heading Error vs Time (SDRE Guidance)');
-grid on;
+ylabel('\psi_{desired} - \psi (rad)');
+    title('Heading Error vs Time (SDRE Guidance)');
+    grid on;
+
+end
+    
+
+
+
 
 
 % Plotting and Helper Functions

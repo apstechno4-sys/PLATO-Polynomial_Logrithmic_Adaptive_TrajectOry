@@ -1,7 +1,7 @@
 % AUV Initial Conditions
 x0 = -50;     % Initial x position (m)
 y0 = -50;     % Initial y position (m)
-psi0 = deg2rad(30); % Initial heading (rad)
+psi0 = deg2rad(22); % Initial heading (rad)
 start = [x0; y0]; % Starting position vector
 
 % Docking Target Parameters
@@ -20,7 +20,7 @@ length_frustum = 3.0; % Length of the frustum (m)
 current_v = 0.5; % Velocity of the water current (m/s)
 % The current is at 90 degrees to the shortest path.
 % Shortest path vector: V_path = dock_start_pos - start
-V_path_shortest = dock_start_pos - start;-30
+V_path_shortest = dock_start_pos - start;
 % Angle of the shortest path
 psi_path_shortest = atan2(V_path_shortest(2), V_path_shortest(1));
 % Angle of the current is 90 degrees to the shortest path
@@ -42,6 +42,10 @@ cruise_speed = initial_v + initial_a * accel_duration;
 Kp = 1.5;      % Proportional gain - responds to current error
 Ki = 0.05;     % Integral gain - eliminates steady-state error
 Kd = 0.03;     % Derivative gain - dampens oscillations
+
+% SDRE parameter
+s_0 = 1;        % Speed at equilibruim (m/s)
+psi_0 = 0;      % Heading at equilibruim
 
 % Guidance Parameters
 docking_radius = 0.1; % Radius for successful docking (m) - considered "docked" within this distance
@@ -101,15 +105,14 @@ options_NLG = odeset('Events', @(t,y) docking_events(t, y, params_NLG));
 fprintf('Running SDRE Guidance Simulation...\n');
 params_SDRE = common_params;
 params_SDRE.guidance = 'SDRE'; % SDRE Guidance
-% params_SDRE.K_nlg_p = K_nlg_p;
+params_SDRE.K_nlg_p = K_nlg_p;
 options_SDRE = odeset('Events', @(t,y) docking_events(t, y, params_SDRE));
 [T_SDRE, Y_SDRE] = ode45(@(t,y) auv_model_log_poly_decel(t, y, params_SDRE), tspan, y0_full, options_SDRE);
 
 fprintf('Simulations complete. Plotting results...\n');
 
-
 % Plot Comparison Results
-plot_comparison(T_LOS, Y_LOS, T_carrot, Y_carrot, T_NLG, Y_NLG, T_SDRE, Y_SDRE, common_params);
+plot_comparison(T_LOS, Y_LOS, T_carrot, Y_carrot, T_NLG, Y_NLG, common_params);
 
 % Figure 5: Relative Velocities
 figure('Name', 'Relative Velocities', 'Position', [100, 100, 1200, 900]);
@@ -126,18 +129,12 @@ vx_NLG = Y_NLG(:,3) .* cos(Y_NLG(:,4));
 vy_NLG = Y_NLG(:,3) .* sin(Y_NLG(:,4));
 v_mag_NLG = sqrt(vx_NLG.^2 + vy_NLG.^2);
 
-vx_SDRE = Y_SDRE(:,3) .* cos(Y_SDRE(:,4));
-vy_SDRE = Y_SDRE(:,3) .* sin(Y_SDRE(:,4));
-v_mag_SDRE = sqrt(vx_SDRE.^2 + vy_SDRE.^2);
-
-
 % Relative velocity magnitude
 subplot(3,1,1);
 hold on;
 plot(T_LOS, v_mag_LOS, 'r-', 'LineWidth', 1.5, 'DisplayName', 'LOS');
 plot(T_carrot, v_mag_carrot, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Carrot');
 plot(T_NLG, v_mag_NLG, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.5, 'DisplayName', 'NLG');
-plot(T_SDRE, v_mag_SDRE, 'Color', [0.0000 1.0000 1.0000], 'LineWidth', 1.5, 'DisplayName', 'SDRE');
 hold off;
 grid on;
 xlabel('Time (s)');
@@ -151,7 +148,6 @@ hold on;
 plot(T_LOS, vx_LOS, 'r-', 'LineWidth', 1.5, 'DisplayName', 'LOS');
 plot(T_carrot, vx_carrot, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Carrot');
 plot(T_NLG, vx_NLG, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.5, 'DisplayName', 'NLG');
-plot(T_SDRE, vx_SDRE, 'Color', [0.0000 1.0000 1.0000], 'LineWidth', 1.5, 'DisplayName', 'SDRE');
 hold off;
 grid on;
 xlabel('Time (s)');
@@ -165,7 +161,6 @@ hold on;
 plot(T_LOS, vy_LOS, 'r-', 'LineWidth', 1.5, 'DisplayName', 'LOS');
 plot(T_carrot, vy_carrot, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Carrot');
 plot(T_NLG, vy_NLG, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.5, 'DisplayName', 'NLG');
-plot(T_SDRE, vy_SDRE, 'Color', [0.0000 1.0000 1.0000], 'LineWidth', 1.5, 'DisplayName', 'SDRE');
 hold off;
 grid on;
 xlabel('Time (s)');
@@ -224,28 +219,11 @@ for i = 1:length(T_NLG)
     end
 end
 
-rdot_SDRE = zeros(size(T_SDRE));
-for i = 1:length(T_SDRE)
-    auv_pos = [Y_SDRE(i,1); Y_SDRE(i,2)];
-    auv_vel_body = [Y_SDRE(i,3)*cos(Y_SDRE(i,4)); Y_SDRE(i,3)*sin(Y_SDRE(i,4))];
-    auv_vel_ground = auv_vel_body + common_params.current_vector;
-    target_pos = get_dock_position(T_SDRE(i), common_params.dock_start_pos, common_params.dock_velocity_vector);
-    
-    vec_to_target = target_pos - auv_pos;
-    dist_to_target = norm(vec_to_target);
-    if dist_to_target > 1e-6
-        rdot_SDRE(i) = dot(auv_vel_ground, vec_to_target) / dist_to_target;
-    else
-        rdot_SDRE(i) = 0;
-    end
-end
-
 % Plot the results
 hold on;
 plot(T_LOS, -rdot_LOS, 'r-', 'LineWidth', 1.5, 'DisplayName', 'LOS');
 plot(T_carrot, -rdot_carrot, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Carrot');
 plot(T_NLG, -rdot_NLG, 'Color', [0.8500 0.3250 0.0980], 'LineWidth', 1.5, 'DisplayName', 'NLG');
-plot(T_SDRE, -rdot_SDRE, 'Color',[0.0000 1.0000 1.0000], 'LineWidth', 1.5, 'DisplayName', 'SDRE');
 hold off;
 grid on;
 xlabel('Time (s)');
@@ -303,9 +281,9 @@ if strcmp(params.guidance, 'NLG')
     d_integral_heading_error = 0;
 elseif strcmp(params.guidance, 'SDRE')
     % SDRE Guidance
-    rc = sdre_guidance(x, y_pos, psi, target);
+    rc = sdre_guidance(x, y_pos, psi, params, target, current_vector);
     heading_error = wrapToPi(atan2(target(2)-y_pos, target(1)-x) - psi);
-    d_integral_heading_error = 0;
+    d_integral_heading_error = heading_error;
 else
     % Standard PID controller for LOS and Carrot Chase
     if strcmp(params.guidance, 'carrot')
@@ -316,7 +294,7 @@ else
 
     % The guidance law calculates the desired heading relative to the ground.
     % The control system must adjust the AUV's heading (relative to water)
-    % to achieve this desired ground heading.   
+    % to achieve this desired ground heading.
     % First, find the desired velocity vector relative to the ground.
     v_desired_ground = s_ground * [cos(desired_psi_ground); sin(desired_psi_ground)];
     
@@ -339,7 +317,7 @@ end
 
 % Limit the maximum angle for correcting the heading angle to be between 30 and -30 degrees.
 % This is applied to the output of the PID/guidance controller.
-max_correction_rad = deg2rad(100);
+max_correction_rad = deg2rad(30);
 rc = max(-max_correction_rad, min(max_correction_rad, rc));
 
 % Speed Control - Log Polynomial Law for Deceleration
@@ -385,7 +363,7 @@ else
 
         term = (log(dist_to_target)) / ...
                (log(dynamic_decel_radius));
-       
+        
         % The desired speed is relative to the ground
         s_desired_ground = params.cruise_speed * max(0, term)^n;
         
@@ -484,84 +462,33 @@ end
 
 % SDRE Guidance
 
-function rc = sdre_guidance(x, y_pos, psi, target)
+function rc = sdre_guidance(x, y_pos, psi, params, target, current_vector)
     desired_psi_ground = atan2(target(2) - y_pos, target(1) - x);
-        
-    % SDRE parameter
-    s_0 = 1;        % Speed at equilibruim (m/s)
-    psi_0 = 0;      % Heading at equilibruim
-
-    % Errors
     heading_error = wrapToPi(desired_psi_ground - psi);
- 
-    A = zeros(2,2);
-    A(1,2) = 1;
-    B = zeros(2,1);
-    B(1,1) = 0;
-    B(2,1) = 1;
+    A = zeros(4,4);
+    A(1,3) = -s_0*sin(phi_0);
+    A(1,4) =  cos(phi_0);
+    A(2,3) =  s_0*cos(phi_0);
+    A(2,4) =  sin(phi_0);
 
-    % A = [0 1 0 0
-    %     0 0 0 0
-    %     0 0 0 0
-    %     0 0 0 0];
-    % 
-    % B = [0 0;
-    %     1 0];
+     B = zeros(4,2);
+B(3,1) = 1;
+B(4,2) = 1;
+
 
     % Cost functions
-    Q = diag([500, 1]);   % weight on heading error
-    R = 1; % weight on control effort
 
-    P = icare(A, B, Q, R);
-    x_sse = [heading_error; 0];
+    Q = 1;   % weight on heading error
+    R = 0.1; % weight on control effort
 
-    K = (R \ (B' * P));   
-    u = K * x_sse;
+    [P,~,~] = care(A, B, Q, R);
 
-    rc = u;
-
+    rc = -B'*P*heading_error;
 end
-
-% Figure 9 - Heading Error vs Time (SDRE) ----
-
-heading_error_SDRE = zeros(size(T_SDRE));
-
-for i = 1:length(T_SDRE)
-
-    % AUV states
-    x_auv   = Y_SDRE(i,1);
-    y_auv   = Y_SDRE(i,2);
-    psi     = Y_SDRE(i,4);
-
-    % Target position at current time (MOVING target)
-    target_pos = get_dock_position( ...
-                    T_SDRE(i), ...
-                    common_params.dock_start_pos, ...
-                    common_params.dock_velocity_vector);
-
-    % Vector from AUV → target
-    dx = target_pos(1) - x_auv;
-    dy = target_pos(2) - y_auv;
-
-    % Desired heading w.r.t moving target
-    desired_psi = atan2(dy, dx);
-
-    % Heading error
-    heading_error_SDRE(i) = wrapToPi(desired_psi - psi);
-
-end
-
-% ---- Plot ----
-figure('Name','Heading Error vs Time (SDRE)','Position',[100 100 1200 500]);
-plot(T_SDRE, heading_error_SDRE, 'LineWidth', 2);
-xlabel('Time (s)');
-ylabel('\psi_{desired}(t) - \psi(t)  (rad)');
-title('Heading Error vs Time (SDRE Guidance)');
-grid on;
-
+    
 
 % Plotting and Helper Functions
-function plot_comparison(T_LOS, Y_LOS, T_carrot, Y_carrot, T_NLG, Y_NLG, T_SDRE, Y_SDRE, params)
+function plot_comparison(T_LOS, Y_LOS, T_carrot, Y_carrot, T_NLG, Y_NLG, params)
 % Extract parameters
 docking_radius = params.docking_radius;
 lw = 1.5; % Line width for plots
@@ -571,13 +498,11 @@ dock_start_pos = params.dock_start_pos;
 dock_velocity_vector = params.dock_velocity_vector;
 
 nlg_color = [0.8500 0.3250 0.0980]; % Orange
-sdre_color = [0.0000 1.0000 1.0000]; % Cyan
 
 % Extract data
 x_LOS = Y_LOS(:,1); y_LOS = Y_LOS(:,2); s_LOS = Y_LOS(:,3); psi_LOS = Y_LOS(:,4);
 x_carrot = Y_carrot(:,1); y_carrot = Y_carrot(:,2); s_carrot = Y_carrot(:,3); psi_carrot = Y_carrot(:,4);
 x_NLG = Y_NLG(:,1); y_NLG = Y_NLG(:,2); s_NLG = Y_NLG(:,3); psi_NLG = Y_NLG(:,4);
-x_SDRE = Y_SDRE(:,1); y_SDRE = Y_SDRE(:,2); s_SDRE = Y_SDRE(:,3); psi_SDRE = Y_SDRE(:,4);
 
 % Ground-relative velocities for plotting
 vx_LOS_ground = s_LOS .* cos(psi_LOS) + current_vector(1);
@@ -586,8 +511,6 @@ vx_carrot_ground = s_carrot .* cos(psi_carrot) + current_vector(1);
 vy_carrot_ground = s_carrot .* sin(psi_carrot) + current_vector(2);
 vx_NLG_ground = s_NLG .* cos(psi_NLG) + current_vector(1);
 vy_NLG_ground = s_NLG .* sin(psi_NLG) + current_vector(2);
-vx_SDRE_ground = s_SDRE .* cos(psi_SDRE) + current_vector(1);
-vy_SDRE_ground = s_SDRE .* sin(psi_SDRE) + current_vector(2);
 
 % Dynamically calculated deceleration radius at cruise speed for plotting
 deceleration_distance_at_cruise = params.deceleration_factor * (params.cruise_speed^2 / (2 * params.max_deceleration));
@@ -600,8 +523,8 @@ hold on;
 plot(x_LOS, y_LOS, 'r-', 'LineWidth', lw, 'DisplayName', 'LOS');
 plot(x_carrot, y_carrot, 'g-', 'LineWidth', lw, 'DisplayName', 'Carrot');
 plot(x_NLG, y_NLG, 'Color', nlg_color, 'LineWidth', lw, 'DisplayName', 'NLG');
-plot(x_SDRE, y_SDRE, 'Color', sdre_color, 'LineWidth', lw, 'DisplayName', 'SDRE');
 
+% Plot reference elements
 plot(start(1), start(2), 'ko', 'MarkerSize', 8, 'LineWidth', 2, 'MarkerFaceColor', 'y', 'DisplayName', 'AUV Start');
 
 % Plot the moving dock's path
@@ -663,7 +586,6 @@ figure('Name', 'Performance Metrics Comparison', 'Position', [950, 100, 800, 700
 dist_error_LOS = arrayfun(@(t,x,y) norm(get_dock_position(t, dock_start_pos, dock_velocity_vector) - [x;y]), T_LOS, x_LOS, y_LOS);
 dist_error_carrot = arrayfun(@(t,x,y) norm(get_dock_position(t, dock_start_pos, dock_velocity_vector) - [x;y]), T_carrot, x_carrot, y_carrot);
 dist_error_NLG = arrayfun(@(t,x,y) norm(get_dock_position(t, dock_start_pos, dock_velocity_vector) - [x;y]), T_NLG, x_NLG, y_NLG);
-dist_error_SDRE = arrayfun(@(t,x,y) norm(get_dock_position(t, dock_start_pos, dock_velocity_vector) - [x;y]), T_SDRE, x_SDRE, y_SDRE);
 
 % Distance to target over time
 subplot(2,2,1);
@@ -671,13 +593,12 @@ hold on;
 plot(T_LOS, dist_error_LOS, 'r-', 'LineWidth', lw);
 plot(T_carrot, dist_error_carrot, 'g-', 'LineWidth', lw);
 plot(T_NLG, dist_error_NLG, 'Color', nlg_color, 'LineWidth', lw);
-plot(T_SDRE, dist_error_SDRE, 'Color', sdre_color, 'LineWidth', lw);
 % Add reference lines for deceleration radii
 yline(dynamic_decel_radius_at_cruise, 'y-.', 'Decel. Zone (Approx)');
 hold off; grid on;
 xlabel('Time (s)'); ylabel('Distance (m)');
 title('Distance to Target');
-legend('LOS', 'Carrot', 'NLG', 'SDRE', 'Location', 'northeast');
+legend('LOS', 'Carrot', 'NLG', 'Location', 'northeast');
 
 % Heading error comparison (Ground Heading Error)
 subplot(2,2,2);
@@ -686,7 +607,6 @@ hold on;
 psi_LOS_ground = atan2(vy_LOS_ground, vx_LOS_ground);
 psi_carrot_ground = atan2(vy_carrot_ground, vx_carrot_ground);
 psi_NLG_ground = atan2(vy_NLG_ground, vx_NLG_ground);
-psi_SDRE_ground = atan2(vy_SDRE_ground, vx_SDRE_ground);
 
 % Desired ground heading for each method
 desired_psi_LOS = zeros(size(T_LOS));
@@ -704,17 +624,10 @@ for i = 1:length(T_NLG)
     target = get_dock_position(T_NLG(i), dock_start_pos, dock_velocity_vector);
     desired_psi_NLG(i) = atan2(target(2) - y_NLG(i), target(1) - x_NLG(i));
 end
-desired_psi_SDRE = zeros(size(T_SDRE));
-for i = 1:length(T_SDRE)
-    target = get_dock_position(T_SDRE(i), dock_start_pos, dock_velocity_vector);
-    desired_psi_SDRE(i) = atan2(target(2) - y_SDRE(i), target(1) - x_SDRE(i));
-end
-
 
 plot(T_LOS, rad2deg(wrapToPi(desired_psi_LOS - psi_LOS_ground)), 'r-', 'LineWidth', lw);
 plot(T_carrot, rad2deg(wrapToPi(desired_psi_carrot - psi_carrot_ground)), 'g-', 'LineWidth', lw);
 plot(T_NLG, rad2deg(wrapToPi(desired_psi_NLG - psi_NLG_ground)), 'Color', nlg_color, 'LineWidth', lw);
-plot(T_SDRE, rad2deg(wrapToPi(desired_psi_SDRE - psi_SDRE_ground)), 'Color', sdre_color, 'LineWidth', lw);
 hold off; grid on;
 xlabel('Time (s)'); ylabel('Ground Heading Error (deg)');
 title('Ground Heading Error Comparison');
@@ -738,16 +651,10 @@ for i = 1:length(T_NLG)
     target = get_dock_position(T_NLG(i), dock_start_pos, dock_velocity_vector);
     cross_track_NLG(i) = calculate_cross_track(x_NLG(i), y_NLG(i), start, target);
 end
-cross_track_SDRE = zeros(size(T_SDRE));
-for i = 1:length(T_SDRE)
-    target = get_dock_position(T_SDRE(i), dock_start_pos, dock_velocity_vector);
-    cross_track_SDRE(i) = calculate_cross_track(x_SDRE(i), y_SDRE(i), start, target);
-end
 hold on;
 plot(T_LOS, cross_track_LOS, 'r-', 'LineWidth', lw);
 plot(T_carrot, cross_track_carrot, 'g-', 'LineWidth', lw);
 plot(T_NLG, cross_track_NLG, 'Color', nlg_color, 'LineWidth', lw);
-plot(T_SDRE, cross_track_SDRE, 'Color', sdre_color, 'LineWidth', lw);
 hold off; grid on;
 xlabel('Time (s)'); ylabel('Error (m)');
 title('Path Following Performance');
@@ -759,7 +666,6 @@ hold on;
 plot(T_LOS, rad2deg([0; diff(Y_LOS(:,4)) ./ diff(T_LOS)]), 'r-', 'LineWidth', lw);
 plot(T_carrot, rad2deg([0; diff(Y_carrot(:,4)) ./ diff(T_carrot)]), 'g-', 'LineWidth', lw);
 plot(T_NLG, rad2deg([0; diff(Y_NLG(:,4)) ./ diff(T_NLG)]), 'Color', nlg_color, 'LineWidth', lw);
-plot(T_SDRE, rad2deg([0; diff(Y_SDRE(:,4)) ./ diff(T_SDRE)]), 'Color', sdre_color, 'LineWidth', lw);
 hold off; grid on;
 xlabel('Time (s)'); ylabel('Turn Rate (deg/s)');
 title('Control Effort Comparison');
@@ -770,15 +676,14 @@ sgtitle('AUV Guidance: Core Performance Metrics with Current', 'FontSize', 14, '
 % Figure 3: Speed and Efficiency Metrics
 figure('Name', 'Speed and Efficiency Metrics', 'Position', [100, 50, 900, 700]);
 % Create categorical array for guidance methods
-labels = categorical({'LOS', 'Carrot', 'NLG', 'SDRE'});
-labels = reordercats(labels, {'LOS', 'Carrot', 'NLG', 'SDRE'});
+labels = categorical({'LOS', 'Carrot', 'NLG'});
+labels = reordercats(labels, {'LOS', 'Carrot', 'NLG'});
 
 % Extract simulation end times and path lengths
-times = [T_LOS(end), T_carrot(end), T_NLG(end), T_SDRE(end)];
+times = [T_LOS(end), T_carrot(end), T_NLG(end)];
 path_lengths = [calculate_path_length(x_LOS, y_LOS), ...
                 calculate_path_length(x_carrot, y_carrot), ...
-                calculate_path_length(x_NLG, y_NLG), ...
-                calculate_path_length(x_SDRE, y_SDRE)];
+                calculate_path_length(x_NLG, y_NLG)];
 
 % Speed profiles
 subplot(2,2,[1,2]);
@@ -786,11 +691,10 @@ hold on;
 plot(T_LOS, s_LOS, 'r-', 'LineWidth', lw, 'DisplayName', 'LOS');
 plot(T_carrot, s_carrot, 'g-', 'LineWidth', lw, 'DisplayName', 'Carrot');
 plot(T_NLG, s_NLG, 'Color', nlg_color, 'LineWidth', lw, 'DisplayName', 'NLG');
-plot(T_SDRE, s_SDRE, 'Color', sdre_color, 'LineWidth', lw, 'DisplayName', 'SDRE');
 grid on; hold off;
 xlabel('Time (s)'); ylabel('Speed (m/s)');
 title('AUV Speed Profile (Relative to Water)');
-legend('LOS', 'Carrot', 'NLG', 'SDRE', 'Location', 'best');
+legend('LOS', 'Carrot', 'NLG', 'Location', 'best');
 
 % Time to target bar chart
 subplot(2,2,3);
@@ -817,16 +721,15 @@ figure('Name', 'Deceleration Performance Analysis', 'Position', [950, 50, 900, 4
 s_final_LOS_ground = norm([vx_LOS_ground(end), vy_LOS_ground(end)]);
 s_final_carrot_ground = norm([vx_carrot_ground(end), vy_carrot_ground(end)]);
 s_final_NLG_ground = norm([vx_NLG_ground(end), vy_NLG_ground(end)]);
-s_final_SDRE_ground = norm([vx_SDRE_ground(end), vy_SDRE_ground(end)]);
 
-final_speeds = [s_final_LOS_ground, s_final_carrot_ground, s_final_NLG_ground, s_final_SDRE_ground];
-final_distances = [dist_error_LOS(end), dist_error_carrot(end), dist_error_NLG(end), dist_error_SDRE(end)];
+final_speeds = [s_final_LOS_ground, s_final_carrot_ground, s_final_NLG_ground];
+final_distances = [dist_error_LOS(end), dist_error_carrot(end), dist_error_NLG(end)];
 
 % Find when deceleration starts for each method
-all_dist_errors = {dist_error_LOS, dist_error_carrot, dist_error_NLG, dist_error_SDRE};
-all_times = {T_LOS, T_carrot, T_NLG, T_SDRE};
-decel_start_times = NaN(1, 4); % Initialize with NaN
-for i = 1:4
+all_dist_errors = {dist_error_LOS, dist_error_carrot, dist_error_NLG};
+all_times = {T_LOS, T_carrot, T_NLG};
+decel_start_times = NaN(1, 3); % Initialize with NaN
+for i = 1:3
     idx = find(all_dist_errors{i} <= dynamic_decel_radius_at_cruise, 1, 'first');
     if ~isempty(idx)
         decel_start_times(i) = all_times{i}(idx);
@@ -835,10 +738,10 @@ end
 
 % Final approach performance (speed vs distance)
 subplot(1, 2, 1);
-markers = {'o', 's', 'p', '+'}; % Different markers for each method
-colors = {'r', 'g', nlg_color, sdre_color}; % Colors for each method
-labels = categorical({'LOS', 'Carrot', 'NLG', 'SDRE'});
-labels = reordercats(labels, {'LOS', 'Carrot', 'NLG', 'SDRE'});
+markers = {'o', 's', 'p'}; % Different markers for each method
+colors = {'r', 'g', nlg_color}; % Colors for each method
+labels = categorical({'LOS', 'Carrot', 'NLG'});
+labels = reordercats(labels, {'LOS', 'Carrot', 'NLG'});
 hold on;
 for i = 1:length(labels)
     plot(final_distances(i), final_speeds(i), ...
